@@ -32,6 +32,8 @@ from grokking.scripts.generate_tsne_visualizations import generate_tsne_visualiz
 from grokking.scripts.group_dataset import GroupDataset
 from grokking.scripts.input_and_hidden_states_array import InputAndHiddenStatesArray
 from grokking.scripts.lr_scheduler_config import LRSchedulerConfig
+from grokking.geometry.analysis import compute_geometry_at_checkpoint
+from grokking.geometry.path import get_flat_params, segment_natural_length
 from grokking.scripts.training_loop_state import TrainingLoopState
 from grokking.typing.constants import MODEL_CLASS, OPTIMIZER_CLASS
 from grokking.typing.enums import Verbosity
@@ -59,6 +61,8 @@ def train(
     output_dir: os.PathLike = default_output_dir,
     verbosity: Verbosity = Verbosity.NORMAL,
     logger: logging.Logger = default_logger,
+    *,
+    cuda_device_id: int | None = None,
 ) -> None:
     """Train the model using the provided configuration."""
     if verbosity >= Verbosity.NORMAL:
@@ -88,7 +92,10 @@ def train(
         preferred_torch_backend=train_cfg["preferred_torch_backend"],
         verbosity=verbosity,
         logger=logger,
+        cuda_device_id=cuda_device_id,
     )
+    if verbosity >= Verbosity.NORMAL:
+        logger.info(msg=f"Training device: {device} (MPS = Apple Silicon GPU)")
 
     if load_checkpoint_from_dir is not None:
         if verbosity >= Verbosity.NORMAL:
@@ -269,6 +276,7 @@ def train(
         "create_plot_of_model_output_parameters_every"
     ]
     save_checkpoints_every: int = train_cfg["save_checkpoints_every"]
+    compute_geometry_every: int = train_cfg.get("compute_geometry_every", 0)
     topological_analysis_compute_estimates_every: int = topological_analysis_cfg["compute_estimates_every"]
     topological_analysis_create_projection_plot_every: int = topological_analysis_cfg["create_projection_plot_every"]
 
@@ -282,6 +290,9 @@ def train(
         total=max_steps,
         position=0,
     )
+
+    prev_theta_for_path: torch.Tensor | None = None
+    cumulative_natural_path_length: float = 0.0
 
     for (
         x,
@@ -469,6 +480,79 @@ def train(
                 verbosity=verbosity,
                 logger=logger,
             )
+
+        # # # #
+        # Geometry analysis (Fisher, curvature, sharpness)
+        if (
+            compute_geometry_every > 0
+            and (training_loop_state.step + 1) % compute_geometry_every == 0
+        ):
+            if verbosity >= Verbosity.NORMAL:
+                logger.info(
+                    msg=f"step + 1 = {training_loop_state.step + 1}: Running geometry analysis ...",  # noqa: G004
+                )
+            try:
+                curr_theta = get_flat_params(
+                    training_loop_state.model,
+                    device=training_loop_state.device,
+                )
+                segment_nat: float | None = None
+                if prev_theta_for_path is not None:
+                    try:
+                        segment_nat = segment_natural_length(
+                            prev_theta_for_path,
+                            curr_theta,
+                            training_loop_state.model,
+                            training_loop_state.train_dataloader,
+                            training_loop_state.device,
+                            n_fisher_batches=20,
+                            top_k=10,
+                        )
+                        cumulative_natural_path_length += segment_nat
+                    except Exception as path_e:
+                        if verbosity >= Verbosity.NORMAL:
+                            logger.warning(
+                                msg=f"step + 1 = {training_loop_state.step + 1}: path length failed: {path_e}",  # noqa: G004
+                            )
+
+                geometry_result: dict = compute_geometry_at_checkpoint(
+                    model=training_loop_state.model,
+                    train_dataloader=training_loop_state.train_dataloader,
+                    device=training_loop_state.device,
+                    step=training_loop_state.step + 1,
+                )
+                if segment_nat is not None:
+                    geometry_result["segment_natural_length"] = segment_nat
+                    geometry_result["cumulative_natural_path_length"] = cumulative_natural_path_length
+                if verbosity >= Verbosity.NORMAL:
+                    logger.info(
+                        msg=f"step + 1 = {training_loop_state.step + 1}: geometry = {geometry_result}",  # noqa: G004
+                    )
+                if use_wandb:
+                    wandb.log(
+                        data={f"geometry/{k}": v for k, v in geometry_result.items() if k != "step" and not isinstance(v, list)},
+                        step=training_loop_state.step + 1,
+                    )
+                    for i, eig in enumerate(geometry_result.get("fisher_top_eigenvalues", [])):
+                        wandb.log(
+                            data={"geometry/fisher_eig_{}".format(i): eig},
+                            step=training_loop_state.step + 1,
+                        )
+                    for i, eig in enumerate(geometry_result.get("representation_spectrum", [])):
+                        wandb.log(
+                            data={"geometry/representation_eig_{}".format(i): eig},
+                            step=training_loop_state.step + 1,
+                        )
+                prev_theta_for_path = curr_theta.detach().clone()
+            except Exception as e:
+                if verbosity >= Verbosity.NORMAL:
+                    logger.warning(
+                        msg=f"step + 1 = {training_loop_state.step + 1}: geometry analysis failed: {e}",  # noqa: G004
+                    )
+            if verbosity >= Verbosity.NORMAL:
+                logger.info(
+                    msg=f"step + 1 = {training_loop_state.step + 1}: Running geometry analysis DONE",  # noqa: G004
+                )
 
         # # # #
         # Finalize training loop step
@@ -681,6 +765,21 @@ def main(
     wandb_cfg: dict = config["wandb"]
     use_wandb: bool = wandb_cfg["use_wandb"]
 
+    # In multirun, pin each job to a GPU by job index so parallel jobs (e.g. joblib) use different GPUs.
+    cuda_device_id: int | None = None
+    job_num_for_log: int | None = None
+    if torch.cuda.is_available() and torch.cuda.device_count() > 0:
+        hydra_job = config.get("hydra") or {}
+        job_cfg = hydra_job.get("job") if isinstance(hydra_job, dict) else {}
+        job_num = job_cfg.get("num", 0) if isinstance(job_cfg, dict) else 0
+        job_num_for_log = int(job_num)
+        cuda_device_id = job_num_for_log % torch.cuda.device_count()
+
+    if job_num_for_log is not None and verbosity >= Verbosity.NORMAL:
+        logger.info(
+            msg=f"Hydra job num = {job_num_for_log} -> GPU {cuda_device_id} (of {torch.cuda.device_count()} visible)",  # noqa: G004
+        )
+
     if use_wandb:
         logger.info(
             msg=f"Initializing wandb with project name: {wandb_cfg['wandb_project']}",  # noqa: G004 - low overhead
@@ -717,6 +816,7 @@ def main(
         output_dir=hydra_output_dir,
         verbosity=verbosity,
         logger=logger,
+        cuda_device_id=cuda_device_id,
     )
 
     if verbosity >= Verbosity.NORMAL:

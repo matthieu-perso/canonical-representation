@@ -38,7 +38,7 @@ while [[ $# -gt 0 ]]; do
         shift 2
         ;;
     --help | -h)
-        echo "Usage: $0 [--launcher hpc|basic]"
+        echo "Usage: $0 [--launcher hpc|basic|basic_4gpu]"
         exit 0
         ;;
     *)
@@ -55,6 +55,22 @@ case "$LAUNCHER" in
 basic)
     LAUNCHER_ARGS+=("hydra/launcher=basic")
     ;;
+basic_4gpu)
+    # Run N jobs in parallel, one per allocated GPU (job index % N).
+    if [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]]; then
+        NGPUS=$(echo "${CUDA_VISIBLE_DEVICES}" | tr ',' '\n' | wc -l | tr -d ' ')
+    else
+        NGPUS=$(nvidia-smi -L 2>/dev/null | wc -l | tr -d ' ')
+    fi
+    if [[ -z "$NGPUS" ]] || [[ "$NGPUS" -lt 1 ]]; then
+        NGPUS=1
+    fi
+    echo ">>> Detected $NGPUS GPU(s), running up to $NGPUS jobs in parallel."
+    LAUNCHER_ARGS+=(
+        "hydra/launcher=joblib"
+        "hydra.launcher.n_jobs=$NGPUS"
+    )
+    ;;
 hpc)
     LAUNCHER_ARGS+=(
         "hydra/sweeper=basic"
@@ -69,7 +85,7 @@ hpc)
     )
     ;;
 *)
-    echo "Unknown launcher: $LAUNCHER. Valid options: hpc, basic"
+    echo "Unknown launcher: $LAUNCHER. Valid options: hpc, basic, basic_4gpu"
     exit 1
     ;;
 esac
@@ -97,8 +113,8 @@ uv run python3 "$SCRIPT_PATH" \
     train.optimizer.eps=1e-6 \
     train.optimizer.clip_grad_norm_max_norm=1.0 \
     train.lr_scheduler.lr_scheduler_type=linear \
-    train.max_steps=400000 \
-    train.save_checkpoints_every=50000 \
+    train.max_steps=60000 \
+    train.save_checkpoints_every=500 \
     logging.training.create_plot_of_model_output_parameters_every=10000 \
     topological_analysis.compute_estimates_every=500 \
     topological_analysis.absolute_n_neighbors_choices=[64] \

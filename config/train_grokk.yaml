@@ -21,7 +21,8 @@ train:
   max_steps: 1e6
   preferred_torch_backend: auto
   global_seed: 1234
-  save_checkpoints_every: 50000
+  save_checkpoints_every: 500  # Every 500 steps for geometry analysis (run_geometry_analysis.py)
+  compute_geometry_every: 500  # Run Fisher/curvature/sharpness every N steps; set 0 to disable
   # Note: Use null to represent None in hydra config (https://stackoverflow.com/questions/76567692/hydra-how-to-express-none-in-config-files)
   load_checkpoint_from_dir: null
   lr_scheduler:
