@@ -1,13 +1,10 @@
-# Notes:
-# - Do not put slashes behind the "backup" entries,
-#   so that we also exclude zipped backup files
-
-# Python environments
 .env
 .env.backup.*
 .venv
 .venv.backup.*
 __pycache__/
+
+.vscode
 
 # MacOS system files
 .DS_Store
@@ -20,5 +17,11 @@ wandb.backup.*
 outputs/
 outputs.backup.*
 
+docs/
+
 # Hydra files
 hydra_plugins/
+
+# Generated SLURM task list
+tasks_paper_experiments.txt
+logs/slurm/

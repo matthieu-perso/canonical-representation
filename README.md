@@ -1,155 +1,71 @@
-# Detecting Grokking via Local Intrinsic Dimensions of Contextual Language Models
+# The Canonical Representation of a Task: The Case of Grokking
 
-*Grokking* is the phenomenon where a machine learning model trained on a small dataset learns to generalize well beyond the training set after a long period of overfitting.
-We demonstrate that the grokking phenomenon can be detected by a change of the local intrinsic dimension (LID) of the model's hidden states.
+Code for the paper *"The Canonical Representation of a Task: The Case of Grokking"* (Moullec & Vlachos).
 
-This repository is based on an unofficial re-implementation of the paper [Grokking: Generalization Beyond Overfitting on Small Algorithmic Datasets](https://arxiv.org/abs/2201.02177) by Power et al.
-The original codebase that we base our work on was written by Charlie Snell.
-The code has been extended to allow the computation of topological local estimates of the language model's hidden states during the training process.
+We study grokking on modular addition by deriving, from the group structure of the task, the **canonical representation** that a model must approximate to generalize, and the **representational deviation** that controls the generalization gap. The experiments here empirically validate the three theorems of the paper and show that directly penalizing representational deviation accelerates grokking.
 
-This package uses [Hydra](https://hydra.cc/docs/intro) to handle the configuration.
-See the `Hydra` documentation or our description below to learn how to change configurations in the `config/` directory or via command line arguments.
+## Installation
 
-## General setup
-
-1. Clone the repository, and move into the directory:
+Requires Python 3.12 and [`uv`](https://docs.astral.sh/uv/).
 
 ```bash
-git clone [REPOSITORY_URL] grokking
-cd grokking/
-```
-
-1. This package works with the [uv](https://docs.astral.sh/uv/) Python package and project manager.
-If you already have `uv` installed, you can create a new environment as follows:
-
-```bash
-uv lock
 uv sync
 ```
 
-1. Now, you can directly run the training script as indicated below via `uv run`.
-If you would like to use the package in another way, you can start a Python interpreter in the environment:
+## Repository structure
+
+- `grokking/grokk_replica/` — transformer model and modular-arithmetic datasets.
+- `grokking/geometry/canonical_alignment.py` — Fourier/irrep projection, canonical subspace $V^*$, representational deviation $H$, margin and excess-loss decompositions.
+- `grokking/scripts/train_grokk.py` — baseline Hydra-configured grokking training run.
+- `grokking/scripts/canonical_geometry_experiments.py` — the main paper experiments (see below).
+- `grokking/scripts/fast_grokking_geometry_wandb.py` — short training run logging canonical alignment to Weights & Biases.
+- `grokking/scripts/irrep_ce_analysis.py` — closed-form computation of Theorem 1 (minimal number of irreps for a target loss).
+- `config/` — Hydra configs for datasets, model, and training.
+
+## Running the experiments
+
+All paper experiments are exposed as a single CLI:
 
 ```bash
-uv run python3
+# Sec. 5.1 — irreps appear in lock-step with validation-loss drops
+uv run canonical_geometry_experiments --experiment geometry_phase_transition
+
+# Sec. 5.3 — generalization gap vs. data fraction
+uv run canonical_geometry_experiments --experiment data_threshold \
+    --fracs 0.1,0.15,0.2,0.25,0.3,0.4,0.5
+
+# Sec. 5.4 — weight decay drives representational deviation -> 0
+uv run canonical_geometry_experiments --experiment weight_decay_geometry \
+    --weight-decays 0,1e-4,1e-3,1e-2,1e-1,1.0
+
+# Sec. 5.5 — penalizing ||H||^2 directly accelerates grokking
+uv run canonical_geometry_experiments --experiment canonical_regularizer \
+    --lambdas 0,0.01,0.1,1.0 --fracs 0.15,0.3
+
+# Sec. 3.1 — robustness of a grokked model to logit noise
+uv run canonical_geometry_experiments --experiment noise_robustness \
+    --sigmas 0,0.5,1,2,5,10
 ```
 
-In the interpreter, you can import the package as follows:
+Theorem 1 (minimal irreps $m^\dagger$ for target loss $\delta$, Table 1):
 
 ```bash
-Python 3.12.9 (main, Mar 17 2025, 21:36:21) [Clang 20.1.0] on darwin
-Type "help", "copyright", "credits" or "license" for more information.
->>> import grokking
+uv run python grokking/scripts/irrep_ce_analysis.py
 ```
 
-## Project-specific setup
-
-1. Set the correct environment variables used in the project config.
-This step can be achieved by running the setup script in the `grokking/setup/` directory once.
+A short W&B-logged grokking run (useful as a smoke test):
 
 ```bash
-./grokking/setup/setup_environment.sh
+uv run python grokking/scripts/fast_grokking_geometry_wandb.py \
+    --wandb-project canonical-representation --p 113 --max-steps 4000
 ```
 
-1. (Optional) If required, e.g., when planning to run jobs on a cluster via a custom Hydra launcher, set the correct environment variables in the `.env` file in the project root directory.
-
-1. (Optional) For setting up the repository to support job submissions to a cluster using a Hydra multi-run launcher, follow the instructions in the [Hydra-HPC-Launcher repository](https://github.com/carelvniekerk/Hydra-HPC-Launcher).
-
-## Usage
-
-We define `uv run` commands in the `pyproject.toml` file, which can be used as entry points to run the code.
-
-The training script uses [Weights And Biases](https://wandb.ai/home) (wandb) by default to generate plots in real-time.
-If you want to disable wandb, just set `wandb.use_wandb=False` in `config/train_grokk.yaml` or as an argument when calling `train_grokk.py`.
-
-In our modified version of the repository, the logging includes:
-
-- Training and validation loss curves and accuracy curves;
-- Topological local estimates of the hidden states during training (with selected hyperparameters).
-
-Note that since the computation of the local intrinsic dimension is expensive, we only compute it in certain intervals during training.
-This can be controlled via the `topological_analysis.compute_estimates_every=500` parameter in the `config/train_grokk.yaml` file.
-
-### General instructions to run the code
-
-To roughly re-create Figure 1 in the original Grokking paper run:
+Standard training (Hydra):
 
 ```bash
 uv run train_grokk
 ```
 
-Running the above command should give curves like this (note the logarithmic scale on the x-axis).
+W&B is optional — set `WANDB_MODE=offline` or `WANDB_MODE=disabled` to run locally.
 
-![Training and validation accuracy single run](figures/main_figure_accuracy.png)
 
-The `uv run` commands also accept command-line arguments.
-So, for example, for running the training with a larger training fraction of 50% and without wandb, you can run:
-
-```bash
-uv run train_grokk dataset.frac_train=0.5 wandb.use_wandb=false
-```
-
-You can try different operations or learning and architectural hyperparameters by modifying configurations in the `config/` directory.
-
-### Experiments: Local Dimensions Detect Grokking
-
-To reproduce the results in our paper, which compares the onset of grokking with the timing of the drop in local intrinsic dimension, you can run the following command:
-
-```bash
-./grokking/experiments/run_with_multiple_dataset.frac_train.sh --launcher basic
-```
-
-This will run the training with different fractions of training data (0.1, 0.2, 0.3, 0.4, 0.5) for multiple seeds, and save the results in wandb logs.
-Note that this will take a long time to run, so you may want to run it on a cluster.
-We provide the  `--launcher hpc` option together with a Hydra launcher to run the jobs on a cluster.
-
-From the wandb logs, you can generate plots like the following, which group the results by training fraction.
-
-![Training and validation accuracy and local intrinsic dimension different training data fractions](figures/different_frac_train_grouped_for_5_seeds.png)
-
-The description of the local estimates contains the parameters used for their computation: 
-`"train.take_all.desc=twonn_samples=3000_zerovec=keep_dedup=array_deduplicator_noise=do_nothing.n-neighbors-mode=absolute_size_n-neighbors=64.mean"`:
-
-- `train`: Training set is used.
-- `take_all`: Sample from all embedding vectors of all tokens in the input sequences (i.e., include operation token "o" and equality token "="). We always sample from all input sequences (M).
-- `samples=3000`: Number of token vectors samples (N) to use for the local intrinsic dimension estimate.
-- `n-neighbors=64`: Number of neighbors (L) to use for the local intrinsic dimension estimate.
-- `mean`: Log the mean of the local intrinsic dimension estimates over all token samples.
-
-Note: We provide scripts for creating the figures in the paper from the wandb logs as part of the [Topo_LLM repository](https://github.com/aidos-lab/Topo_LLM_public) in `topollm/plotting/wandb_export/`.
-
-## Citation
-
-Our paper [Less is More: Local Intrinsic Dimensions of Contextual Language Models](https://arxiv.org/abs/2506.01034) discusses the results further.
-
-```tex
-@misc{ruppik2025morelocalintrinsicdimensions,
-      title={Less is More: Local Intrinsic Dimensions of Contextual Language Models}, 
-      author={Benjamin Matthias Ruppik and Julius von Rohrscheidt and Carel van Niekerk and Michael Heck and Renato Vukovic and Shutong Feng and Hsien-chin Lin and Nurul Lubis and Bastian Rieck and Marcus Zibrowius and Milica Gašić},
-      year={2025},
-      eprint={2506.01034},
-      archivePrefix={arXiv},
-      primaryClass={cs.CL},
-      url={https://arxiv.org/abs/2506.01034},
-      note={To appear in NeurIPS 2025},
-}
-```
-
-- [Topo_LLM repository](https://github.com/aidos-lab/Topo_LLM_public)
-
-## Acknowledgements
-
-The current repository is based on a fork of the repository [Sea-Snell/grokking](https://github.com/Sea-Snell/grokking) written by Charlie Snell.
-Please also refer to the original repository and research paper (with associated [code](https://github.com/openai/grok)).
-
-```tex
-@misc{power2022grokkinggeneralizationoverfittingsmall,
-      title={Grokking: Generalization Beyond Overfitting on Small Algorithmic Datasets}, 
-      author={Alethea Power and Yuri Burda and Harri Edwards and Igor Babuschkin and Vedant Misra},
-      year={2022},
-      eprint={2201.02177},
-      archivePrefix={arXiv},
-      primaryClass={cs.LG},
-      url={https://arxiv.org/abs/2201.02177}, 
-}
-```
