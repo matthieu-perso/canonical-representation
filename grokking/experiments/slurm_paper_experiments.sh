@@ -35,12 +35,15 @@ mkdir -p logs/slurm
 . /etc/profile.d/modules.sh
 module purge
 module load rhel8/default-amp
-module load python/3.12 cuda/11.8 cudnn/8.9_cuda-11.8
+module load cuda/11.8 cudnn/8.9_cuda-11.8
+# NOTE: CSD3 does not provide a python/3.12 module. Python 3.12 is provided
+# by uv and lives in the project-local virtual environment at $REPO/.venv
+# (created once via `uv sync`).
 
-source /rds/user/mm2833/hpc-work/venv_grokking/bin/activate
-
-export GROKKING_REPOSITORY_BASE_PATH="${GROKKING_REPOSITORY_BASE_PATH:-/rds/user/mm2833/hpc-work/grokking-via-lid}"
+export GROKKING_REPOSITORY_BASE_PATH="${GROKKING_REPOSITORY_BASE_PATH:-/rds/user/mm2833/hpc-work/canonical-representation}"
 cd "$GROKKING_REPOSITORY_BASE_PATH"
+
+source "$GROKKING_REPOSITORY_BASE_PATH/.venv/bin/activate"
 [ -f .env ] && source .env
 
 # Avoid wandb service-wait hangs under heavy array load
