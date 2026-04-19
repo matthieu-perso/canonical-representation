@@ -1,6 +1,9 @@
 # The Canonical Representation of a Task: The Case of Grokking
 
-Code for the paper *"The Canonical Representation of a Task: The Case of Grokking"* (Moullec & Vlachos).
+Code for the paper *"The Canonical Representation of a Task: The Case of Grokking"*.
+
+> **Note:** Significant portions of this codebase reuse or adapt code from [Less Is More](https://github.com/aidos-lab/grokking-via-lid) repository (by Ben Ruppik et al.), which itself is a reimplementation of the original grokking paper by Power et al.
+
 
 We study grokking on modular addition by deriving, from the group structure of the task, the **canonical representation** that a model must approximate to generalize, and the **representational deviation** that controls the generalization gap. The experiments here empirically validate the three theorems of the paper and show that directly penalizing representational deviation accelerates grokking.
 
