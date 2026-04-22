@@ -44,7 +44,7 @@ export GROKKING_REPOSITORY_BASE_PATH="${GROKKING_REPOSITORY_BASE_PATH:-/rds/user
 cd "$GROKKING_REPOSITORY_BASE_PATH"
 
 source "$GROKKING_REPOSITORY_BASE_PATH/.venv/bin/activate"
-[ -f .env ] && source .env
+[ -f .env ] && set -a && source .env && set +a
 
 # Avoid wandb service-wait hangs under heavy array load
 export WANDB__SERVICE_WAIT=300

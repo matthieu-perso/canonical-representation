@@ -137,7 +137,7 @@ class _RunConfig:
 
 @dataclasses.dataclass
 class _WandbConfig:
-    project: str = "canonical_repr_grokking"
+    project: str = "canonical_representation_paper"
     group: str = "default"
     name: str = ""
     mode: str | None = None
@@ -265,8 +265,11 @@ def _training_step_with_reg(  # noqa: PLR0913
         logits, _, _ = model(x_dev)
         z = logits[:, -1, :]
         loss = torch.nn.functional.cross_entropy(z, y_dev)
-        logs = {"loss": loss.item(),
-                "accuracy": (z.argmax(dim=-1) == y_dev).float().mean().item()}
+        n = int(y_dev.numel())
+        logs = {
+            "loss": (loss.item(), n),
+            "accuracy": ((z.argmax(dim=-1) == y_dev).float().mean().item(), n),
+        }
     else:
         loss, logs = model.get_loss(x_dev, y_dev)
 
@@ -1126,7 +1129,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # W&B
     p.add_argument(
         "--wandb-project",
-        default="canonical_repr_grokking",
+        default="canonical_representation_paper",
         help="W&B project name (create it once in the UI or it is created on first log).",
     )
     p.add_argument("--wandb-mode", default=None, help="e.g. offline, disabled")

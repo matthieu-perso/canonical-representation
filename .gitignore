@@ -4,6 +4,12 @@
 .venv.backup.*
 __pycache__/
 
+analysis/
+analysis.backup.*
+wandb_dir/
+
+
+
 .vscode
 
 # MacOS system files
@@ -24,4 +30,5 @@ hydra_plugins/
 
 # Generated SLURM task list
 tasks_paper_experiments.txt
+logs/
 logs/slurm/

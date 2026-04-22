@@ -16,7 +16,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
-export WANDB_PROJECT="${WANDB_PROJECT:-canonical_repr_grokking}"
+export WANDB_PROJECT="${WANDB_PROJECT:-canonical_representation_paper}"
 LOG_DIR="${LOG_DIR:-$ROOT/logs/canonical_geometry_runs}"
 mkdir -p "$LOG_DIR"
 
